@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ARK — THE FINAL TRANSFORMATION</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root { --blood: #bc0000; --gold: #ffcc00; --dark: #0a0a0a; --ember: #ff4500; --sakura: #ffb7c5; }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; }
+        body { background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; user-select: none; -webkit-user-select: none; }
+
+        #particle-canvas { position: fixed; inset: 0; z-index: 99998; pointer-events: none; }
+        #sakura-canvas { position: fixed; inset: 0; z-index: 99997; pointer-events: none; display: none; }
+        #fog-canvas { position: fixed; inset: 0; z-index: 99996; pointer-events: none; display: none; }
+        #fireworks-canvas { position: fixed; inset: 0; z-index: 99999; pointer-events: none; display: none; }
+
+        #cursor { position: fixed; width: 28px; height: 28px; border: 2px solid var(--blood); border-radius: 50%; pointer-events: none; z-index: 99999; transform: translate(-50%, -50%); transition: width 0.15s, height 0.15s, border-color 0.3s; mix-blend-mode: difference; box-shadow: 0 0 18px rgba(188,0,0,0.7), 0 0 40px rgba(188,0,0,0.25); }
+        #cursor.active { width: 44px; height: 44px; border-color: var(--gold); box-shadow: 0 0 30px rgba(255,204,0,0.9), 0 0 60px rgba(255,180,0,0.5); }
+        #cursor-dot { position: fixed; width: 6px; height: 6px; background: #fff; border-radius: 50%; pointer-events: none; z-index: 99999; transform: translate(-50%, -50%); box-shadow: 0 0 8px #fff; }
+        #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 4000; transition: opacity 0.08s; }
+        #flash.flare { opacity: 1; transition: opacity 0s; }
+
+        #glass-shatter { position: fixed; inset: 0; z-index: 5000; pointer-events: none; display: none; }
+        .shatter-piece { position: absolute; width: 100px; height: 100px; background: rgba(255, 255, 255, 0.1); clip-path: polygon(50% 0%, 100% 30%, 80% 100%, 20% 100%, 0% 30%); animation: shatter 1.5s ease-out forwards; }
+        @keyframes shatter { 0% { transform: translate(0, 0) rotate(0deg); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
+
+        #titan-eyes-overlay { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: none; }
+        .eye-left, .eye-right { position: absolute; width: 40px; height: 50px; background: radial-gradient(circle, #ff0000 0%, #ff4500 30%, transparent 70%); border-radius: 50%; box-shadow: 0 0 40px #ff0000, 0 0 80px #ff4500, 0 0 120px #ff0000; animation: eyeGlow 0.5s ease-in-out infinite alternate; }
+        .eye-left { top: 30%; left: 35%; }
+        .eye-right { top: 30%; right: 35%; }
+        @keyframes eyeGlow { 0% { box-shadow: 0 0 30px #ff0000, 0 0 60px #ff4500; transform: scale(1); } 100% { box-shadow: 0 0 60px #ff0000, 0 0 120px #ff4500, 0 0 180px #ff0000; transform: scale(1.1); } }
+
+        #splash { position: fixed; inset: 0; z-index: 3000; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .instruction-box { border: 2px solid #bc0000; padding: 40px; max-width: 600px; background: rgba(20,0,0,0.8); animation: pulseBorder 2s ease-in-out infinite; position: relative; }
+        @keyframes pulseBorder { 0%,100% { box-shadow: 0 0 20px rgba(188,0,0,0.3); } 50% { box-shadow: 0 0 50px rgba(188,0,0,0.7), 0 0 80px rgba(255,0,0,0.2); } }
+        #splash h2 { font-family: 'Bebas Neue'; font-size: 3rem; color: #bc0000; margin-bottom: 20px; animation: textGlitch 3s infinite; letter-spacing: 3px; }
+        @keyframes textGlitch { 0%,94%,96%,100% { transform: translateX(0); text-shadow: 0 0 10px #bc0000; } 95% { transform: translateX(-3px); text-shadow: -2px 0 #ff0000, 2px 0 #00ffff; } }
+        .blood-drip { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 4px; height: 18px; background: var(--blood); border-radius: 0 0 4px 4px; animation: drip 2.5s ease-in infinite; opacity: 0.85; }
+        @keyframes drip { 0% { height:12px; opacity:0.6; } 40% { height:24px; opacity:1; } 70% { height:16px; opacity:0.8; } 100% { height:12px; opacity:0.6; } }
+
+        #cam-stage { display: none; position: fixed; inset: 0; z-index: 2000; background: #050505; flex-direction: column; align-items: center; justify-content: center; }
+        video { border: 4px solid #bc0000; width: 640px; height: 480px; transform: scaleX(-1); border-radius: 10px; box-shadow: 0 0 60px rgba(188,0,0,0.4); animation: camPulse 1.2s ease-in-out infinite; }
+        @keyframes camPulse { 0%,100% { box-shadow: 0 0 60px rgba(188,0,0,0.4); } 50% { box-shadow: 0 0 90px rgba(255,0,0,0.7); } }
+        .bite-prompt { margin-top: 20px; font-family: 'Bebas Neue'; font-size: 2.2rem; color: var(--gold); animation: promptBlink 0.7s infinite alternate; letter-spacing: 4px; }
+        @keyframes promptBlink { 0% { opacity:0.5; text-shadow:0 0 10px #ffcc00; } 100% { opacity:1; text-shadow:0 0 30px #ffcc00, 0 0 60px #ff9900; } }
+        .vignette { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 200px 80px rgba(0,0,0,0.75); z-index: 5; }
+
+        #fullscreen-popup { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-family: 'Bebas Neue'; }
+        .popup-inner { padding: 40px; border: 2px solid var(--blood); background: #111; box-shadow: 0 0 30px rgba(188,0,0,0.5); animation: pulseBorder 1.8s infinite; }
+
+        #cake-stage { display: none; position: fixed; inset: 0; z-index: 1000; background: url('AOTbg.jpg') no-repeat center center; background-size: cover; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        @keyframes flicker { 0% { transform: scale(1); opacity:0.8; } 100% { transform: scale(1.15); opacity:1; } }
+
+        #crossroads { display: none; position: fixed; inset: 0; z-index: 1100; background: radial-gradient(circle, #200000 0%, #000 100%); flex-direction: column; align-items: center; justify-content: center; }
+        #crossroads h2 { font-family: 'Bebas Neue'; font-size: 4rem; color: #bc0000; margin-bottom: 40px; animation: textGlitch 4s infinite; }
+        .btn-group { display: flex; gap: 30px; flex-wrap: wrap; justify-content: center; }
+        .choice-btn { padding: 20px 40px; font-family: 'Bebas Neue'; font-size: 1.8rem; background: transparent; border: 2px solid var(--gold); color: var(--gold); transition: 0.4s; box-shadow: 0 0 20px rgba(255,204,0,0.2); letter-spacing: 2px; cursor: pointer; }
+        .choice-btn:hover { background: var(--gold); color: #000; box-shadow: 0 0 50px #ffcc00; transform: translateY(-3px); }
+
+        #memories-stage { display: none; padding: 50px; background: #0a0a0a; min-height: 100vh; overflow-y: auto; }
+        .shard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .shard { border: 4px solid #333; height: 380px; overflow: hidden; position: relative; transition: 0.4s; }
+        .shard:hover { border-color: var(--gold); box-shadow: 0 0 40px rgba(255,204,0,0.35); transform: translateY(-5px); }
+        .shard img, .shard video { width: 100%; height: 100%; object-fit: cover; transition: 0.5s; }
+        .shard:hover img, .shard:hover video { transform: scale(1.06); }
+
+        #letter-stage { display: none; position: fixed; inset: 0; z-index: 2500; background: #000; flex-direction: column; align-items: center; justify-content: center; }
+        .letter-content { max-width: 700px; padding: 50px; border-left: 3px solid var(--blood); background: rgba(255,255,255,0.02); max-height: 90vh; overflow-y: auto; }
+        #final-paragraph { font-size: 1.2rem; line-height: 1.8; color: #eee; min-height: 60px; }
+        .typed-cursor { color: var(--blood); animation: promptBlink 0.6s infinite; font-weight: bold; }
+
+        #pin-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.96); z-index: 2000; flex-direction: column; align-items: center; justify-content: center; font-family: 'Share Tech Mono'; }
+        .pin-box { text-align: center; border: 1px solid var(--blood); padding: 40px; background: #0a0a0a; animation: pulseBorder 2.5s infinite; }
+        #pin-display { font-size: 3rem; color: #fff; letter-spacing: 20px; margin-bottom: 30px; }
+        .keypad-btn { background: #111; border: 1px solid #333; color: #fff; padding: 16px; cursor: pointer; font-family: 'Share Tech Mono'; font-size: 1.3rem; transition: 0.2s; }
+        .keypad-btn:hover { background: #1a0000; border-color: var(--blood); box-shadow: 0 0 15px rgba(188,0,0,0.5); }
+        .keypad-btn:active { background: var(--blood); transform: scale(0.93); }
+
+        #ark-final-secret { display: none; position: fixed; inset: 0; background: #000; z-index: 2001; flex-direction: column; align-items: center; justify-content: center; text-align: center; animation: fadeInUp 0.8s; }
+        @keyframes fadeInUp { from { opacity:0; transform:translateY(40px); } to { opacity:1; transform:translateY(0); } }
+        .secret-img-wrap { width: 70%; max-width: 400px; border: 1px solid var(--blood); box-shadow: 0 0 40px rgba(188,0,0,0.4); margin-bottom: 25px; overflow: hidden; border-radius: 4px; animation: glowPulse 2s infinite; }
+        @keyframes glowPulse { 0%,100% { box-shadow:0 0 40px rgba(188,0,0,0.4); } 50% { box-shadow:0 0 80px rgba(255,0,0,0.6); } }
+        .secret-img-wrap img { width: 100%; height: auto; display: block; }
+    </style>
+</head>
+<body>
+
+<canvas id="particle-canvas"></canvas>
+<canvas id="sakura-canvas"></canvas>
+<canvas id="fog-canvas"></canvas>
+<canvas id="fireworks-canvas"></canvas>
+<div id="glass-shatter"></div>
+
+<div id="cursor"></div>
+<div id="cursor-dot"></div>
+<div id="flash"></div>
+
+<section id="splash">
+    <div class="instruction-box">
+        <div class="blood-drip"></div>
+        <h2>ARK, LISTEN CAREFULLY</h2>
+        <p style="font-family:'Share Tech Mono'; letter-spacing:2px; line-height:1.5;">
+            To cut the cake and unlock your freedom, you must prove your resolve.<br><br>
+            Prepare to <span style="color:#fff; font-weight:bold; text-shadow:0 0 10px #ff0000;">BITE YOUR HAND</span> like Eren Yeager when the camera activates.
+        </p>
+        <button onclick="startCam()" style="margin-top:30px; padding:15px 30px; background:#bc0000; border:none; color:#fff; font-family:'Bebas Neue'; font-size:1.5rem; letter-spacing:3px; cursor:pointer; box-shadow:0 0 25px rgba(188,0,0,0.5);"
+        onmouseover="this.style.boxShadow='0 0 50px #ff0000'; this.style.transform='scale(1.04)';"
+        onmouseout="this.style.boxShadow='0 0 25px rgba(188,0,0,0.5)'; this.style.transform='scale(1)';">
+        INITIATE TRANSMISSION</button>
+    </div>
+</section>
+
+<section id="cam-stage">
+    <div class="vignette"></div>
+    <video id="input_video"></video>
+    <div id="titan-eyes-overlay">
+        <div class="eye-left"></div>
+        <div class="eye-right"></div>
+    </div>
+    <p class="bite-prompt">⚡ BRING HAND TO MOUTH NOW ⚡</p>
+</section>
+
+<div id="fullscreen-popup"><div class="popup-inner"><h2 style="color:#fff; font-size:2.5rem; letter-spacing:3px;">CONNECTION ESTABLISHED</h2><p style="color:#ccc; font-family:'Share Tech Mono'; margin-bottom:30px;">IDENTITY SCAN READY. ENTER FULLSCREEN TO PROCEED.</p><button onclick="goFullAndContinue()" style="padding:15px 40px; background:var(--blood); border:none; color:#fff; font-family:'Bebas Neue'; font-size:1.5rem; cursor:pointer; letter-spacing:3px;">ENTER FULLSCREEN</button></div></div>
+
+<section id="cake-stage">
+    <div style="position:absolute; inset:0; background:rgba(0,0,0,0.35); z-index:1;"></div>
+    <div id="cake-interactive" onclick="sliceCake()" style="cursor:pointer; position:relative; z-index:2; transition:0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+        <div style="width:160px; height:120px; position:relative; margin:0 auto;">
+            <div style="position:absolute; bottom:0; width:160px; height:50px; background:#8b0000; border-radius:10px; border-bottom:5px solid #4a0000; box-shadow:0 10px 20px rgba(0,0,0,0.5);"></div>
+            <div style="position:absolute; bottom:45px; left:30px; width:100px; height:40px; background:#bc0000; border-radius:8px; border-bottom:4px solid #8b0000;"><div style="width:100%; height:10px; background:#fff; border-radius:8px 8px 0 0; opacity:0.8;"></div></div>
+            <div style="position:absolute; top:-5px; left:78px; width:4px; height:15px; background:#ffd700; border-radius:2px;"><div style="position:absolute; top:-12px; left:-3px; width:10px; height:14px; background:#ff4500; border-radius:50% 50% 20% 20%; animation:flicker 0.1s infinite alternate; box-shadow:0 0 10px #ff4500;"></div></div>
+        </div>
+        <p style="color:#fff; font-family:'Share Tech Mono'; font-size:1.1rem; margin-top:30px; letter-spacing:6px; font-weight:bold; text-shadow:2px 2px 5px #000;">[ TAP TO SLICE ]</p>
+    </div>
+    <h1 style="font-family:'Bebas Neue'; margin-top:40px; line-height:1; z-index:2; position:relative; letter-spacing:2px;">
+        <span style="display:block; font-size:2.5rem; color:#fff; letter-spacing:12px; margin-bottom:5px; text-shadow:2px 2px 10px #000;">HAPPY BIRTHDAY</span>
+        <span style="display:block; font-size:11rem; color:#fff; letter-spacing:1px; text-shadow:0 0 10px #f39c12, 0 0 20px #e67e22, 0 0 30px #d35400;">ARK</span>
+    </h1>
+</section>
+
+<section id="crossroads">
+    <h2>CHOOSE YOUR DESTINY</h2>
+    <div class="btn-group">
+        <button class="choice-btn" onclick="showMemories()">🔮 VIEW MEMORIES</button>
+        <button class="choice-btn" onclick="showLetter()">📜 SECRET LETTER</button>
+        <button class="choice-btn" style="border-color:var(--blood); color:#fff; font-size:1rem; padding:10px 20px;" onclick="openPinOverlay()">🔒 ONLY FOR ARK</button>
+    </div>
+</section>
+
+<div id="pin-overlay"><div class="pin-box"><h2 style="color:var(--blood); letter-spacing:5px; margin-bottom:10px;">LEVEL 5 CLEARANCE REQUIRED</h2><p style="color:#666; font-size:0.8rem; margin-bottom:20px;">ENTER 4-DIGIT ACCESS KEY</p><div id="pin-display">____</div><div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; max-width:200px; margin:0 auto;">
+    <button class="keypad-btn" onclick="pressKey('1')">1</button><button class="keypad-btn" onclick="pressKey('2')">2</button><button class="keypad-btn" onclick="pressKey('3')">3</button>
+    <button class="keypad-btn" onclick="pressKey('4')">4</button><button class="keypad-btn" onclick="pressKey('5')">5</button><button class="keypad-btn" onclick="pressKey('6')">6</button>
+    <button class="keypad-btn" onclick="pressKey('7')">7</button><button class="keypad-btn" onclick="pressKey('8')">8</button><button class="keypad-btn" onclick="pressKey('9')">9</button>
+    <button class="keypad-btn" onclick="clearPin()" style="color:var(--blood);">C</button><button class="keypad-btn" onclick="pressKey('0')">0</button><button class="keypad-btn" onclick="closePinOverlay()" style="color:#666;">X</button>
+</div></div></div>
+
+<section id="memories-stage"><div class="shard-grid">
+    <div class="shard"><img src="photo1.jpg" alt="memory"></div><div class="shard"><video src="video1.mp4" autoplay loop muted playsinline></video></div>
+    <div class="shard"><img src="photo2.jpeg" alt="memory"></div><div class="shard"><img src="photo3.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo4.jpeg" alt="memory"></div><div class="shard"><video src="video2.mp4" autoplay loop muted playsinline></video></div>
+    <div class="shard"><img src="photo5.jpg" alt="memory"></div><div class="shard"><img src="photo6.jpg" alt="memory"></div>
+    <div class="shard"><img src="photo7.jpg" alt="memory"></div><div class="shard"><img src="photo8.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo9.jpeg" alt="memory"></div><div class="shard"><img src="photo10.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo11.jpeg" alt="memory"></div><div class="shard"><img src="photo12.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo13.jpeg" alt="memory"></div><div class="shard"><video src="video3.mp4" autoplay loop muted playsinline></video></div>
+    <div class="shard"><img src="photo14.jpeg" alt="memory"></div><div class="shard"><img src="photo15.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo16.jpeg" alt="memory"></div><div class="shard"><video src="video4.mp4" autoplay loop muted playsinline></video></div>
+    <div class="shard"><img src="photo17.jpeg" alt="memory"></div><div class="shard"><img src="photo18.jpeg" alt="memory"></div>
+    <div class="shard"><video src="video5.mp4" autoplay loop muted playsinline></video></div><div class="shard"><img src="photo19.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo20.jpeg" alt="memory"></div><div class="shard"><img src="photo21.jpeg" alt="memory"></div>
+    <div class="shard"><video src="video6.mp4" autoplay loop muted playsinline></video></div><div class="shard"><img src="photo22.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo23.jpeg" alt="memory"></div><div class="shard"><img src="photo24.jpeg" alt="memory"></div>
+    <div class="shard"><video src="video7.mp4" autoplay loop muted playsinline></video></div><div class="shard"><img src="photo25.jpeg" alt="memory"></div>
+    <div class="shard"><img src="photo26.jpeg" alt="memory"></div><div class="shard"><img src="photo27.jpg" alt="memory"></div>
+</div><div style="text-align:center; margin-top:50px; padding-bottom:40px;"><button class="choice-btn" onclick="showLetter()" style="font-size:1.2rem;">📜 NOW, GO TO THE SECRET MESSAGE</button></div></section>
+
+<section id="letter-stage"><div class="letter-content"><h3 style="font-family:'Bebas Neue'; font-size:2.5rem; color:#bc0000; margin-bottom:20px;">DECRYPTED MESSAGE FOR ARK</h3><p id="final-paragraph"></p><div style="margin-top:40px; display:flex; gap:20px;"><button class="choice-btn" style="font-size:1rem; padding:10px 20px;" onclick="goHome()">🏠 BACK TO START</button><button class="choice-btn" style="font-size:1rem; padding:10px 20px; border-color:var(--blood); color:var(--blood);" onclick="showMemories()">🔮 VIEW MEMORIES</button></div></div></section>
+
+<div id="ark-final-secret">
+    <h1 style="color:var(--blood); font-family:'Bebas Neue'; font-size:2.8rem; letter-spacing:4px; text-shadow:0 0 10px rgba(188,0,0,0.5);">WELCOME, ARK</h1>
+    <p style="color:#666; font-family:'Share Tech Mono'; font-size:0.75rem; margin-bottom:20px;">Decryption Complete: Archive Alpha-91</p>
+    <div class="secret-img-wrap"><img src="couple.jpg" alt="Secret Archive"></div>
+    <p style="color:#fff; font-family:'Share Tech Mono'; line-height:1.7; font-size:1.1rem; max-width:500px; margin-bottom:25px;">"I don't know what the future holds, but I hope this picture eventually becomes something ONE DAY❤️🕊️!"</p>
+    <button onclick="closeFinalSecret()" style="color:#666; background:none; border:none; padding:10px; font-family:'Share Tech Mono'; font-size:0.8rem; cursor:pointer;">Terminate Session</button>
+</div>
+
+<audio id="bite-sound" src="https://www.myinstants.com/media/sounds/tatakae-eren.mp3" preload="auto"></audio>
+<audio id="slice-sound" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3" preload="auto"></audio>
+<audio id="bg-music" src="audio4.mp3" loop preload="auto"></audio>
+<audio id="heartbeat-sound" src="https://assets.mixkit.co/active_storage/sfx/2088/2088-preview.mp3" loop preload="auto"></audio>
+
+<script>
+    // ============ GLOBAL STATE ============
+    const cursor = document.getElementById('cursor');
+    const cursorDot = document.getElementById('cursor-dot');
+    const flash = document.getElementById('flash');
+    const videoElement = document.getElementById('input_video');
+    let transformed = false;
+    let camReady = false;
+    let currentPin = "";
+    const correctPin = "2008";
+    let beatIntensity = 0;
+    let beatPhase = 0;
+
+    // ============ YOUR LETTER ============
+    const yourLetter = `Happy 18th Birthday, ARK! 🎉🥂
+
+Bro is finally 18 ~(CHEERS🍷) officially an adult now 😌✨
+This is a big moment. From all the stupid laughs 😂, late-night talks 🌙, random bakchodi 😭, to those real deep conversations… you've been there through everything 🤝
+
+Not gonna lie, you've always been that calm, sorted, "thoda zyada hi mature" type banda 😌
+Kabhi kabhi lagta hai tu hum sabse 5 saal aage chal raha hai 🚀 and then suddenly you say something and I'm like "haan theek hai, abhi bhi hum jesa he hai" 💀😂
+
+From all the bakchodi 🤡, roasting sessions 🔥, random laughs 😂 to those rare deep talks at the worst possible timings… we've seen it all 🫂
+
+And somewhere in between all that chaos, you became more than just a friend 🤍
+Honestly, life feels different having a friend like you ✨
+Not everyone gets a brother in the form of a bestfriend, but I did 😉😏
+
+But real talk —
+You're one of those rare people jinke saath fake hone ki zarurat hi nahi padti 🙌
+No drama 🚫, no nonsense… just real 💯
+
+Now you're stepping into a new phase — more freedom 🕊️, more responsibility 📈, and a lot more crazy memories waiting to be created 🎯
+Just don't change who you are. Stay real, stay hungry, and keep that same energy ⚡
+
+No matter what happens ahead —
+I'm always with you 🤝❤️
+
+A very Happy Birthday once again Bruudaaa! 🎂🔥❤️
+
+— Your partner in crime x Your lifelong headache 🤝😎🔥`;
+
+    // ============ CANVAS SETUP ============
+    const particleCanvas = document.getElementById('particle-canvas');
+    const pctx = particleCanvas.getContext('2d');
+    const sakuraCanvas = document.getElementById('sakura-canvas');
+    const sctx = sakuraCanvas.getContext('2d');
+    const fogCanvas = document.getElementById('fog-canvas');
+    const fctx = fogCanvas.getContext('2d');
+    const fireworksCanvas = document.getElementById('fireworks-canvas');
+    const fwctx = fireworksCanvas.getContext('2d');
+
+    function resizeAll() {
+        [particleCanvas, sakuraCanvas, fogCanvas, fireworksCanvas].forEach(c => {
+            c.width = window.innerWidth;
+            c.height = window.innerHeight;
+        });
+    }
+    window.addEventListener('resize', resizeAll);
+    resizeAll();
+
+    // ============ PARTICLES SYSTEM (ALL HEARTS) ============
+    let particles = [];
+    document.addEventListener('mousemove', (e) => {
+        cursor.style.left = e.clientX + 'px';
+        cursor.style.top = e.clientY + 'px';
+        cursorDot.style.left = e.clientX + 'px';
+        cursorDot.style.top = e.clientY + 'px';
+        if (particles.length < 80) {
+            particles.push({ 
+                x: e.clientX, y: e.clientY, 
+                vx: (Math.random()-0.5)*1.5, vy: (Math.random()-0.5)*1.5 - 2, 
+                life: 1, decay: 0.015 + Math.random()*0.025, 
+                size: 6 + Math.random()*10, 
+                color: Math.random() < 0.5 ? '255,60,80' : '188,0,0', 
+                heart: true, beat: false 
+            });
+        }
+    });
+    document.addEventListener('mousedown', () => cursor.classList.add('active'));
+    document.addEventListener('mouseup', () => cursor.classList.remove('active'));
+
+    function spawnParticles(x, y, count, color, speed) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = speed * (0.4 + Math.random() * 1.2);
+            particles.push({ x, y, vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd - 3, life: 1, decay: 0.008+Math.random()*0.04, size: 4+Math.random()*10, color, heart: true, beat: false });
+        }
+    }
+
+    function spawnConfetti(count) {
+        const colors = ['255,204,0','255,69,0','188,0,0','255,255,255','255,150,0','255,60,80','255,105,180'];
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = 3 + Math.random() * 14;
+            particles.push({ x: window.innerWidth/2, y: window.innerHeight/2, vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd - 8, life: 1, decay: 0.005+Math.random()*0.02, size: 8+Math.random()*16, color: colors[Math.floor(Math.random()*colors.length)], heart: true });
+        }
+    }
+
+    function spawnHearts(count, x, y) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = 1 + Math.random() * 5;
+            particles.push({ x: x||window.innerWidth/2, y: y||window.innerHeight/2, vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd-3, life: 1, decay: 0.006+Math.random()*0.025, size: 5+Math.random()*14, color: '255,60,80', heart: true });
+        }
+    }
+
+    function animateParticles() {
+        pctx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+        beatPhase += 0.05;
+        for (let i = particles.length-1; i >= 0; i--) {
+            const p = particles[i];
+            p.life -= p.decay;
+            p.x += p.vx;
+            p.y += p.vy;
+            if (p.beat) { p.size += (Math.sin(beatPhase * 3) * 0.5); p.size = Math.max(2, Math.min(15, p.size)); }
+            if (p.life <= 0) { particles.splice(i, 1); continue; }
+            pctx.save();
+            pctx.globalAlpha = p.life;
+            const cx = p.x, cy = p.y, s = p.size * 0.6;
+            pctx.fillStyle = `rgba(${p.color},${p.life})`;
+            pctx.beginPath();
+            pctx.moveTo(cx, cy + s * 0.3);
+            pctx.bezierCurveTo(cx, cy - s * 0.5, cx - s, cy - s * 0.5, cx - s, cy - s * 1.2);
+            pctx.bezierCurveTo(cx - s, cy - s * 1.8, cx, cy - s * 1.8, cx, cy - s);
+            pctx.bezierCurveTo(cx, cy - s * 1.8, cx + s, cy - s * 1.8, cx + s, cy - s * 1.2);
+            pctx.bezierCurveTo(cx + s, cy - s * 0.5, cx, cy - s * 0.5, cx, cy + s * 0.3);
+            pctx.fill();
+            pctx.fillStyle = `rgba(${p.color},${p.life * 0.3})`;
+            pctx.beginPath();
+            pctx.moveTo(cx, cy + s * 0.4);
+            pctx.bezierCurveTo(cx, cy - s * 0.8, cx - s * 1.5, cy - s * 0.8, cx - s * 1.5, cy - s * 1.8);
+            pctx.bezierCurveTo(cx - s * 1.5, cy - s * 2.5, cx, cy - s * 2.5, cx, cy - s * 1.3);
+            pctx.bezierCurveTo(cx, cy - s * 2.5, cx + s * 1.5, cy - s * 2.5, cx + s * 1.5, cy - s * 1.8);
+            pctx.bezierCurveTo(cx + s * 1.5, cy - s * 0.8, cx, cy - s * 0.8, cx, cy + s * 0.4);
+            pctx.fill();
+            pctx.restore();
+        }
+        requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+    // ============ SAKURA ============
+    let sakuraPetals = [];
+    function initSakura() {
+        sakuraPetals = [];
+        for (let i = 0; i < 60; i++) {
+            sakuraPetals.push({ x: Math.random()*sakuraCanvas.width, y: Math.random()*sakuraCanvas.height, size: 8+Math.random()*16, speed: 0.5+Math.random()*2, sway: Math.random()*2-1, rotation: Math.random()*360, rotSpeed: (Math.random()-0.5)*2, opacity: 0.4+Math.random()*0.6 });
+        }
+    }
+    function animateSakura() {
+        if (sakuraCanvas.style.display === 'none') { requestAnimationFrame(animateSakura); return; }
+        sctx.clearRect(0, 0, sakuraCanvas.width, sakuraCanvas.height);
+        for (let p of sakuraPetals) {
+            p.y += p.speed; p.x += Math.sin(p.y*0.02)*p.sway; p.rotation += p.rotSpeed;
+            if (p.y > sakuraCanvas.height+50) { p.y = -50; p.x = Math.random()*sakuraCanvas.width; }
+            sctx.save(); sctx.globalAlpha = p.opacity; sctx.translate(p.x, p.y); sctx.rotate(p.rotation*Math.PI/180);
+            sctx.fillStyle = '#ffb7c5'; sctx.beginPath();
+            sctx.moveTo(0, -p.size/2); sctx.bezierCurveTo(p.size/2, -p.size/2, p.size/2, p.size/2, 0, p.size/2);
+            sctx.bezierCurveTo(-p.size/2, p.size/2, -p.size/2, -p.size/2, 0, -p.size/2); sctx.fill();
+            sctx.fillStyle = '#ff9eb5'; sctx.beginPath(); sctx.arc(0, 0, p.size*0.3, 0, Math.PI*2); sctx.fill();
+            sctx.restore();
+        }
+        requestAnimationFrame(animateSakura);
+    }
+    initSakura(); animateSakura();
+
+    // ============ FOG ============
+    let fogParticles = [];
+    function initFog() { fogParticles = []; for (let i=0; i<40; i++) fogParticles.push({ x: Math.random()*fogCanvas.width, y: Math.random()*fogCanvas.height, size: 80+Math.random()*200, speed: 0.2+Math.random()*0.8, opacity: 0.03+Math.random()*0.08 }); }
+    function animateFog() {
+        if (fogCanvas.style.display === 'none') { requestAnimationFrame(animateFog); return; }
+        fctx.clearRect(0, 0, fogCanvas.width, fogCanvas.height);
+        for (let p of fogParticles) {
+            p.x += p.speed; p.y += Math.sin(p.x*0.005)*0.3;
+            if (p.x > fogCanvas.width+200) { p.x = -200; p.y = Math.random()*fogCanvas.height; }
+            fctx.fillStyle = `rgba(100, 0, 0, ${p.opacity})`; fctx.beginPath(); fctx.arc(p.x, p.y, p.size, 0, Math.PI*2); fctx.fill();
+        }
+        requestAnimationFrame(animateFog);
+    }
+    initFog(); animateFog();
+
+    // ============ FIREWORKS ============
+    let fireworkParticles = [];
+    function launchFirework() {
+        const x = Math.random()*fireworksCanvas.width, y = fireworksCanvas.height*0.3+Math.random()*fireworksCanvas.height*0.3;
+        const colors = ['#ff0000','#ffcc00','#ff4500','#ff69b4','#00ffff','#ffd700','#ff1493'];
+        const color = colors[Math.floor(Math.random()*colors.length)];
+        for (let i=0; i<80; i++) { const a=Math.random()*Math.PI*2, s=2+Math.random()*8; fireworkParticles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, decay: 0.01+Math.random()*0.03, color, size: 2+Math.random()*4 }); }
+    }
+    function animateFireworks() {
+        if (fireworksCanvas.style.display === 'none') { requestAnimationFrame(animateFireworks); return; }
+        fwctx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
+        if (Math.random()<0.05) launchFirework();
+        for (let i=fireworkParticles.length-1; i>=0; i--) {
+            const p = fireworkParticles[i]; p.life -= p.decay; p.x += p.vx; p.y += p.vy; p.vy += 0.05;
+            if (p.life<=0) { fireworkParticles.splice(i,1); continue; }
+            fwctx.fillStyle = p.color.replace(')',`,${p.life})`).replace('rgb','rgba'); fwctx.beginPath(); fwctx.arc(p.x,p.y,p.size,0,Math.PI*2); fwctx.fill();
+        }
+        requestAnimationFrame(animateFireworks);
+    }
+    animateFireworks();
+
+    // ============ TITAN EYES ============
+    let eyesTimer;
+    function showTitanEyes() { const e=document.getElementById('titan-eyes-overlay'); e.style.display='block'; clearTimeout(eyesTimer); eyesTimer=setTimeout(()=>{e.style.display='none'},2000); }
+
+    // ============ GLASS SHATTER ============
+    function triggerGlassShatter() {
+        const c=document.getElementById('glass-shatter'); c.style.display='block'; c.innerHTML='';
+        for (let i=0;i<20;i++) { const d=document.createElement('div'); d.className='shatter-piece'; d.style.cssText=`left:${Math.random()*80}%;top:${Math.random()*80}%;--dx:${(Math.random()-0.5)*400}px;--dy:${(Math.random()-0.5)*400}px;--rot:${(Math.random()-0.5)*720}deg;animation-delay:${Math.random()*0.3}s;`; c.appendChild(d); }
+        setTimeout(()=>{c.style.display='none'},2000);
+    }
+
+    // ============ CONSTELLATION ============
+    function drawConstellation() {
+        const sd=document.getElementById('ark-final-secret'); if(sd.style.display!=='flex')return;
+        const cv=document.createElement('canvas'); cv.style.cssText='position:fixed;inset:0;z-index:2000;pointer-events:none;'; cv.width=window.innerWidth; cv.height=window.innerHeight; document.body.appendChild(cv);
+        const cx=cv.getContext('2d'), pts=[{x:cv.width*.3,y:cv.height*.2},{x:cv.width*.35,y:cv.height*.35},{x:cv.width*.4,y:cv.height*.25},{x:cv.width*.5,y:cv.height*.3},{x:cv.width*.55,y:cv.height*.2},{x:cv.width*.6,y:cv.height*.35},{x:cv.width*.65,y:cv.height*.25}];
+        let a=0;
+        const fi=setInterval(()=>{a+=0.02;if(a>=1)clearInterval(fi); cx.clearRect(0,0,cv.width,cv.height); cx.strokeStyle=`rgba(255,215,0,${a})`; cx.lineWidth=2; cx.beginPath(); cx.moveTo(pts[0].x,pts[0].y); for(let i=1;i<pts.length;i++)cx.lineTo(pts[i].x,pts[i].y); cx.stroke();
+            for(let p of pts){cx.fillStyle=`rgba(255,255,255,${a})`;cx.beginPath();cx.arc(p.x,p.y,5,0,Math.PI*2);cx.fill();cx.fillStyle=`rgba(255,215,0,${a*.5})`;cx.beginPath();cx.arc(p.x,p.y,12,0,Math.PI*2);cx.fill();}
+            cx.font=`${a*80}px 'Bebas Neue'`;cx.fillStyle=`rgba(255,215,0,${a})`;cx.textAlign='center';cx.fillText('ARK',cv.width*.47,cv.height*.55);},50);
+        setTimeout(()=>{const fo=setInterval(()=>{a-=0.03;if(a<=0){clearInterval(fo);cv.remove();return;} cx.clearRect(0,0,cv.width,cv.height); cx.strokeStyle=`rgba(255,215,0,${a})`; cx.lineWidth=2; cx.beginPath(); cx.moveTo(pts[0].x,pts[0].y); for(let i=1;i<pts.length;i++)cx.lineTo(pts[i].x,pts[i].y); cx.stroke();
+            for(let p of pts){cx.fillStyle=`rgba(255,255,255,${a})`;cx.beginPath();cx.arc(p.x,p.y,5,0,Math.PI*2);cx.fill();}},50);},3000);
+    }
+
+    // ============ SHAKE & FLASH ============
+    function screenShake(i,d){const b=document.body,s=performance.now();function sh(n){const e=n-s;if(e<d){const dc=1-e/d;b.style.transform=`translate(${(Math.random()-.5)*i*dc*2}px,${(Math.random()-.5)*i*dc*2}px)`;requestAnimationFrame(sh)}else b.style.transform=''}requestAnimationFrame(sh);}
+    function triggerFlash(d,c){flash.style.background=c||'#fff';flash.classList.add('flare');setTimeout(()=>{flash.classList.remove('flare');flash.style.background='#fff'},d);}
+
+    // ============ TYPEWRITER ============
+    let twt;
+    function typewriter(el,txt,spd,cb){if(twt)clearTimeout(twt);el.innerHTML='';let i=0;const cs=document.createElement('span');cs.className='typed-cursor';cs.innerHTML='|';el.appendChild(cs);function tp(){if(i<txt.length){cs.before(document.createTextNode(txt[i]));i++;twt=setTimeout(tp,spd+Math.random()*25)}else{cs.remove();if(cb)cb()}}tp();}
+
+    // ============ NAVIGATION ============
+    function startCam(){document.getElementById('splash').style.display='none';document.getElementById('fullscreen-popup').style.display='flex';spawnParticles(window.innerWidth/2,window.innerHeight/2,30,'188,0,0',6);initMediaPipe();}
+    function goFullAndContinue(){makeFullScreen();document.getElementById('fullscreen-popup').style.display='none';document.getElementById('cam-stage').style.display='flex';camReady=true;spawnParticles(window.innerWidth/2,window.innerHeight/2,20,'255,204,0',4);document.getElementById('heartbeat-sound').play();}
+    function triggerTransformation(){if(transformed||!camReady)return;transformed=true;camReady=false;showTitanEyes();document.getElementById('heartbeat-sound').pause();document.getElementById('bite-sound').play();spawnParticles(window.innerWidth/2,window.innerHeight/2,80,'188,0,0',10);spawnParticles(window.innerWidth/2,window.innerHeight/2,30,'255,0,0',7);triggerFlash(150,'#ff0000');triggerGlassShatter();setTimeout(()=>triggerFlash(200,'#fff'),180);setTimeout(()=>triggerFlash(300,'#ff4444'),400);screenShake(18,700);setTimeout(()=>{flash.classList.add('flare');flash.style.background='#fff'},550);setTimeout(()=>{flash.classList.remove('flare');flash.style.background='#fff';document.getElementById('cam-stage').style.display='none';document.getElementById('cake-stage').style.display='flex';spawnParticles(window.innerWidth/2,window.innerHeight/2,40,'255,180,50',3);document.getElementById('bg-music').play();},750);}
+    function sliceCake(){document.getElementById('slice-sound').play();triggerGlassShatter();spawnConfetti(100);spawnParticles(window.innerWidth/2,window.innerHeight/2,60,'255,204,0',8);screenShake(12,400);triggerFlash(250,'#ffcc00');setTimeout(()=>triggerFlash(180,'#ffffff'),200);setTimeout(()=>flash.classList.add('flare'),280);setTimeout(()=>{flash.classList.remove('flare');document.getElementById('cake-stage').style.display='none';document.getElementById('crossroads').style.display='flex';document.getElementById('fog-canvas').style.display='block';spawnParticles(window.innerWidth/2,window.innerHeight/2,50,'255,150,30',4);const m=document.getElementById('bg-music');m.volume=0.5;if(m.paused)m.play();},400);}
+    function showMemories(){document.getElementById('crossroads').style.display='none';document.getElementById('letter-stage').style.display='none';document.getElementById('memories-stage').style.display='block';document.getElementById('sakura-canvas').style.display='block';document.getElementById('fog-canvas').style.display='none';document.body.style.overflowY="auto";document.getElementById('memories-stage').scrollTop=0;}
+    function showLetter(){document.getElementById('crossroads').style.display='none';document.getElementById('memories-stage').style.display='none';document.getElementById('letter-stage').style.display='flex';document.getElementById('sakura-canvas').style.display='none';document.getElementById('fog-canvas').style.display='none';document.body.style.overflowY="hidden";typewriter(document.getElementById('final-paragraph'),yourLetter,30,()=>{spawnHearts(30,window.innerWidth/2,window.innerHeight/2);document.getElementById('fireworks-canvas').style.display='block';setTimeout(()=>document.getElementById('fireworks-canvas').style.display='none',10000);});}
+    function goHome(){location.reload();}
+    function makeFullScreen(){const e=document.documentElement;if(e.requestFullscreen)e.requestFullscreen();else if(e.webkitRequestFullscreen)e.webkitRequestFullscreen();}
+
+    // ============ MEDIAPIPE ============
+    function initMediaPipe(){const h=new Hands({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});h.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:0.4});h.onResults((r)=>{if(r.multiHandLandmarks?.length>0&&r.multiHandLandmarks[0][8].y<0.55&&camReady&&!transformed)triggerTransformation();});const c=new Camera(videoElement,{onFrame:async()=>{await h.send({image:videoElement});},width:640,height:480});c.start();}
+
+    // ============ PIN ============
+    function openPinOverlay(){currentPin="";document.getElementById('pin-display').innerText="____";document.getElementById('pin-overlay').style.display='flex';document.getElementById('fog-canvas').style.display='none';}
+    function closePinOverlay(){document.getElementById('pin-overlay').style.display='none';}
+    function pressKey(n){if(currentPin.length<4){currentPin+=n;document.getElementById('pin-display').innerText="*".repeat(currentPin.length)+"_".repeat(4-currentPin.length);if(currentPin.length===4)setTimeout(checkPin,300);}}
+    function clearPin(){currentPin="";document.getElementById('pin-display').innerText="____";}
+    function checkPin(){if(currentPin===correctPin){document.getElementById('pin-overlay').style.display='none';document.getElementById('ark-final-secret').style.display='flex';document.getElementById('fog-canvas').style.display='none';spawnHearts(60);spawnConfetti(50);triggerFlash(300,'#ff9999');screenShake(6,300);setTimeout(drawConstellation,500);}else{screenShake(8,250);triggerFlash(200,'#ff0000');spawnParticles(window.innerWidth/2,window.innerHeight/2,15,'255,0,0',5);alert("🚫 ACCESS DENIED. INVALID CREDENTIALS.");clearPin();}}
+    function closeFinalSecret(){document.getElementById('ark-final-secret').style.display='none';document.getElementById('fireworks-canvas').style.display='block';setTimeout(()=>document.getElementById('fireworks-canvas').style.display='none',8000);}
+
+    // ============ BYPASS ============
+    document.addEventListener('keydown',(e)=>{if(e.key==="Enter"){const s=document.getElementById('splash'),f=document.getElementById('fullscreen-popup'),c=document.getElementById('cam-stage');if(s.style.display!=='none')startCam();else if(f.style.display==='flex')goFullAndContinue();else if(c.style.display==='flex'&&camReady)triggerTransformation();}});
+
+    // ============ BEAT SYNC ============
+    setInterval(()=>{particles.forEach(p=>{if(Math.random()<0.1)p.beat=true;if(p.beat&&p.life<0.5)p.beat=false;});},500);
+</script>
+</body>
+</html>
